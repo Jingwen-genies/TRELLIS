@@ -5,6 +5,18 @@ INPUT_SCHEMA = {
         'shape': [1],
         'example': ["https://github.com/microsoft/TRELLIS/raw/main/assets/example_image/T.png"]
     },
+    "task_id": {
+        'datatype': 'STRING',
+        'required': True,
+        'shape': [1],
+        'example': ["1234567890"]
+    },
+    "return_render": {
+        'datatype': 'BOOL',
+        'required': True,
+        'shape': [1],
+        'example': [False]
+    },
     "seed": {
         'datatype': 'INT64',
         'required': False,

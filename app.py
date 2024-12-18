@@ -7,6 +7,7 @@ import imageio
 from PIL import Image
 from trellis.pipelines import TrellisImageTo3DPipeline
 from trellis.utils import render_utils, postprocessing_utils
+import numpy as np
 import boto3
 
 
@@ -31,11 +32,13 @@ class InferlessPythonModel:
         self.pipeline = TrellisImageTo3DPipeline.from_pretrained("JeffreyXiang/TRELLIS-image-large")
         self.pipeline.cuda()
 
-        aws_region = 'us-east-1'  # e.g., 'us-west-1'
+        aws_region = 'us-west-1'  # e.g., 'us-west-1'
         self.s3_client = boto3.client('s3', region_name=aws_region, aws_access_key_id=os.getenv("AWS_KEYS"), aws_secret_access_key=os.getenv("AWS_SECRETS") )
 
     def infer(self, inputs):
         image_url = inputs["image_url"]
+        trial_id = inputs["task_id"]
+        return_render = inputs["return_render"]
         seed =  int(inputs.get("seed",0))
         ss_guidance_strength =  float(inputs.get("ss_guidance_strength",7.5))
         ss_sampling_steps =  int(inputs.get("ss_sampling_steps",12))
@@ -62,35 +65,21 @@ class InferlessPythonModel:
         )
 
         # Render the outputs
-        trial_id = uuid.uuid4()
-        s3_bucket_name = 'infer-global-models'
-        s3_key_prefix = 'videos/'  # Folder path in your S3 bucket (optional)
+        s3_bucket_name = 'genies-ml-rnd'
+        s3_key_prefix = '3D-generation/trellis/output_tasks'  # Folder path in your S3 bucket (optional)
 
-        video = render_utils.render_video(outputs['gaussian'][0])['color']        
-        buffer = BytesIO()
-        imageio.mimsave(buffer, video, fps=30, format='mp4')
-        buffer.seek(0)  # Reset the buffer position
-        # Upload to S3
-        s3_key = f"{s3_key_prefix}{trial_id}_gs.mp4"  # S3 key for the video
-        self.s3_client.upload_fileobj(buffer, s3_bucket_name, s3_key)
-        key_gs = s3_key
-
-        video = render_utils.render_video(outputs['radiance_field'][0])['color']
-        buffer = BytesIO()
-        imageio.mimsave(buffer, video, fps=30, format='mp4')
-        buffer.seek(0)
-        s3_key = f"{s3_key_prefix}{trial_id}_rf.mp4"  # S3 key for the video
-        self.s3_client.upload_fileobj(buffer, s3_bucket_name, s3_key)
-        key_rf = s3_key
-
-        
-        video = render_utils.render_video(outputs['mesh'][0])['normal']
-        buffer = BytesIO()
-        imageio.mimsave(buffer, video, fps=30, format='mp4')
-        buffer.seek(0)
-        s3_key = f"{s3_key_prefix}{trial_id}_mesh.mp4"  # S3 key for the video
-        self.s3_client.upload_fileobj(buffer, s3_bucket_name, s3_key)
-        key_mesh = s3_key
+        if return_render:
+            video = render_utils.render_video(outputs['gaussian'][0], num_frames=120)['color']
+            video_geo = render_utils.render_video(outputs['mesh'][0], num_frames=120)['normal']
+            video = [np.concatenate([video[i], video_geo[i]], axis=1) for i in range(len(video))]
+            buffer = BytesIO()
+            imageio.mimsave(buffer, video, fps=30, format='mp4')
+            buffer.seek(0)
+            s3_key = f"{s3_key_prefix}/{trial_id}/{trial_id}_video.mp4"
+            self.s3_client.upload_fileobj(buffer, s3_bucket_name, s3_key)
+            key_video = s3_key
+        else:
+            video_path = None
 
         # GLB files can be extracted from the outputs
         glb = postprocessing_utils.to_glb(
@@ -101,12 +90,15 @@ class InferlessPythonModel:
             texture_size=glb_extraction_texture_size,  
         )
         
-        # glb.export(f"{trial_id}.glb")
+        glb.export(f"{trial_id}.glb") 
+        key_glb = f"{s3_key_prefix}/{trial_id}/{trial_id}_model.glb"
+        self.s3_client.upload_file(f"{trial_id}.glb", s3_bucket_name, key_glb)
+        key_glb = key_glb
 
         return {
-            "gaussian_video": key_gs,
-            "radiance_field_video": key_rf,
-            "mesh_video": key_mesh,
+            "task_id": trial_id,
+            "model_glb": key_glb,
+            "video_path": video_path
         }
 
     def finalize(self):
