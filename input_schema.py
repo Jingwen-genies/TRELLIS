@@ -15,7 +15,7 @@ INPUT_SCHEMA = {
         'datatype': 'BOOL',
         'required': True,
         'shape': [1],
-        'example': [False]
+        'example': [True]
     },
     "seed": {
         'datatype': 'INT64',
