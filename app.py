@@ -79,7 +79,7 @@ class InferlessPythonModel:
             self.s3_client.upload_fileobj(buffer, s3_bucket_name, s3_key)
             key_video = s3_key
         else:
-            video_path = ""
+            key_video = ""
 
         # GLB files can be extracted from the outputs
         glb = postprocessing_utils.to_glb(
@@ -98,7 +98,7 @@ class InferlessPythonModel:
         return {
             "task_id": trial_id,
             "model_glb": key_glb,
-            "video_path": video_path
+            "video_path": key_video
         }
 
     def finalize(self):
